@@ -265,10 +265,9 @@ function convert() {
 
     vcf += "BEGIN:VCARD\n";
     vcf += "VERSION:3.0\n";
-    vcf += "CHARSET=UTF-8\n";
     vcf += `N:${lastName};${firstName};;;\n`;
     vcf += `FN:${cleanName}\n`;
-    vcf += `TEL;TYPE=CELL;TYPE=VOICE:${formattedPhone}\n`;
+    vcf += `TEL;TYPE=CELL:${formattedPhone}\n`;
     vcf += "END:VCARD\n";
   });
 
