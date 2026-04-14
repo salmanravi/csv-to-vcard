@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CSV to vCard Converter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f5f7fb;
+    margin: 0;
+    padding: 40px 20px; /* more breathing room top/bottom */
+  }
+
+  .container {
+    max-width: 720px;
+    margin: auto;
+    background: white;
+    padding: 32px; /* increased */
+    border-radius: 18px;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.08);
+  }
+
+  h2 {
+    margin-top: 0;
+    margin-bottom: 20px; /* add spacing below title */
+  }
+
+  h3 {
+    margin-top: 30px;
+    margin-bottom: 15px;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+    color: #555;
+  }
+
+  .upload-box {
+    border: 2px dashed #ccc;
+    padding: 40px; /* bigger drop area */
+    text-align: center;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: 0.2s;
+    margin-bottom: 25px; /* spacing below upload */
+  }
+
+  .upload-box:hover {
+    border-color: #4f46e5;
+    background: #f9f9ff;
+  }
+
+  input[type="file"] {
+    display: none;
+  }
+
+  .mapping {
+    margin-top: 25px;
+  }
+
+  select {
+    width: 100%;
+    padding: 12px;
+    margin-top: 6px;
+    margin-bottom: 18px; /* more spacing between fields */
+    border-radius: 10px;
+    border: 1px solid #ddd;
+  }
+
+  button {
+    width: 100%;
+    padding: 16px; /* bigger button */
+    border: none;
+    border-radius: 12px;
+    background: #ff2c3d;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    transition: 0.2s;
+    margin-top: 20px; /* space above button */
+  }
+
+  button:hover {
+    background: #4338ca;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #eee;
+    padding: 10px; /* more cell padding */
+    text-align: left;
+  }
+
+  th {
+    background: #fafafa;
+  }
+
+  #status {
+    margin-top: 20px;
+    font-size: 14px;
+    color: #444;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <h2>📇 CSV → vCard Converter</h2>
+<p>
+</p>
+
+  <div class="upload-box" id="dropZone">
+  📂 Click or Drag CSV File Here
+  <input type="file" id="fileInput" accept=".csv" />
+</div>
+
+  <div id="mapping" class="mapping" style="display:none;">
+    <h3>Column Mapping</h3>
+
+    <label>Name</label>
+    <select id="nameCol"></select>
+
+    <label>Phone</label>
+    <select id="phoneCol"></select>
+  </div>
+
+  <div id="preview"></div>
+
+  <br>
+  <button onclick="convert()">Convert to VCF</button>
+
+  <p id="status"></p>
+<p>
+<br>
+<h2>📑 Panduan</h2>
+<p>1. Upload file .csv dari sheet <a href="https://jjpcpvxr2ta.sg.larksuite.com/wiki/LZVXw363wirFMikWq6MlWkYkgRE?from=from_copylink">Contact Bulk Saver</a></p>
+<p>2. Pastikan nama kontak berada di kolom Name dan nomor HP berapa di kolom Phone Number</p>
+<p>3. Klik tombol "Convert to VCF", kirim file .vcf yang terdownload ke HP masing-masing</p>
+<p>4. Buka dan simpan menggunakan aplikasi kontak</p>
+Jika ada pertanyaan mengenai tools ini, sila hubungi Salman <a href="https://wa.me/6289603970737">+6289603970737</a>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+
+<script>
+  let parsedData = [];
+  let headers = [];
+
+  const nameKeywords = [
+    'name','nama','full name','fullname','nama lengkap','penerima'
+  ];
+
+  const phoneKeywords = [
+    'phone','hp','tel','nomor','no hp','whatsapp','wa'
+  ];
+
+  document.getElementById('fileInput').addEventListener('change', handleFile);
+
+  function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    document.getElementById('status').innerText = "Processing file...";
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        parsedData = results.data;
+        headers = Object.keys(parsedData[0] || {});
+
+        setupDropdowns(headers);
+        autoDetect();
+        showPreview();
+
+        document.getElementById('mapping').style.display = 'block';
+        document.getElementById('status').innerText = "File loaded ✅";
+      }
+    });
+  }
+
+  function setupDropdowns(headers) {
+    ['nameCol','phoneCol'].forEach(id => {
+      const select = document.getElementById(id);
+      select.innerHTML = "";
+
+      headers.forEach(h => {
+        const option = document.createElement("option");
+        option.value = h;
+        option.text = h;
+        select.appendChild(option);
+      });
+    });
+  }
+
+  function scoreMatch(header, keywords) {
+    let score = 0;
+    const h = header.toLowerCase();
+
+    keywords.forEach(k => {
+      if (h === k) score += 5;
+      else if (h.includes(k)) score += 2;
+    });
+
+    return score;
+  }
+
+  function getBestMatch(headers, keywords) {
+    let best = headers[0];
+    let bestScore = 0;
+
+    headers.forEach(h => {
+      const score = scoreMatch(h, keywords);
+      if (score > bestScore) {
+        bestScore = score;
+        best = h;
+      }
+    });
+
+    return best;
+  }
+
+  function autoDetect() {
+    document.getElementById('nameCol').value = getBestMatch(headers, nameKeywords);
+    document.getElementById('phoneCol').value = getBestMatch(headers, phoneKeywords);
+  }
+
+  function showPreview() {
+    let html = "<h3>Preview</h3><table>";
+
+    html += "<tr>";
+    headers.forEach(h => html += `<th>${h}</th>`);
+    html += "</tr>";
+
+    parsedData.slice(0,5).forEach(row => {
+      html += "<tr>";
+      headers.forEach(h => html += `<td>${row[h] || ''}</td>`);
+      html += "</tr>";
+    });
+
+    html += "</table>";
+
+    document.getElementById('preview').innerHTML = html;
+  }
+
+  function convert() {
+    if (!parsedData.length) {
+      alert("Upload CSV first");
+      return;
+    }
+
+    document.getElementById('status').innerText = "Converting...";
+
+    const nameKey = document.getElementById('nameCol').value;
+    const phoneKey = document.getElementById('phoneCol').value;
+
+    let vcf = "";
+
+    parsedData.forEach(contact => {
+      const name = contact[nameKey];
+      const phone = contact[phoneKey];
+
+      if (!name || !phone) return;
+
+      const formattedPhone = formatPhone(phone);
+
+      vcf += "BEGIN:VCARD\n";
+      vcf += "VERSION:3.0\n";
+      vcf += `FN:${name}\n`;
+      vcf += `TEL;TYPE=CELL:${formattedPhone}\n`;
+      vcf += "END:VCARD\n";
+    });
+
+    downloadVCF(vcf);
+
+    document.getElementById('status').innerText = "Done ✅ File downloaded";
+  }
+
+  function formatPhone(phone) {
+    phone = phone.toString().replace(/[^0-9]/g, '');
+
+    if (phone.startsWith("0")) {
+      phone = "62" + phone.substring(1);
+    }
+
+    if (!phone.startsWith("62")) {
+      phone = "62" + phone;
+    }
+
+    return "+" + phone;
+  }
+
+  function downloadVCF(data) {
+    const blob = new Blob([data], { type: "text/vcard" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "contacts.vcf";
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+
+// Click to open file picker
+dropZone.addEventListener("click", () => fileInput.click());
+
+// Highlight on drag
+dropZone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  dropZone.style.borderColor = "#4f46e5";
+  dropZone.style.background = "#eef2ff";
+});
+
+// Remove highlight
+dropZone.addEventListener("dragleave", () => {
+  dropZone.style.borderColor = "#ccc";
+  dropZone.style.background = "";
+});
+
+// Handle drop
+dropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+
+  dropZone.style.borderColor = "#ccc";
+  dropZone.style.background = "";
+
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+
+  fileInput.files = e.dataTransfer.files;
+
+  handleFile({ target: { files: [file] } });
+});
+
+
+</script>
+
+</body>
+</html>
